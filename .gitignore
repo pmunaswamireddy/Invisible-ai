@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+chat_history.json
+settings.json
+build/
+dist/
+*.spec
+generated_image_*.jpg
+scan_result.png

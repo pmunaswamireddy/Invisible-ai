@@ -1,0 +1,6 @@
+@echo off
+echo Activating Virtual Environment...
+call .venv\Scripts\activate.bat
+echo Starting Invisible AI Overlay...
+python overlay.py
+pause
