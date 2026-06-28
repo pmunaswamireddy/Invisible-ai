@@ -8,17 +8,15 @@ echo [1] Activating Virtual Environment...
 call .venv\Scripts\activate.bat
 
 echo [2] Installing Dependencies...
-pip install pyinstaller python-dotenv
+pip install pyinstaller python-dotenv googlesearch-python
 
 
 
 echo [4] Cleaning previous builds...
 if exist "build" rmdir /s /q "build"
-if exist "dist" rmdir /s /q "dist"
-if exist "*.spec" del /q "*.spec"
 
-echo [5] Compiling to standalone executable...
-pyinstaller --onefile --windowed --name "SystemAudioEngine" --add-data ".env;." --hidden-import pyttsx3.drivers --hidden-import pyttsx3.drivers.sapi5 overlay.py
+echo [5] Compiling to standalone executable using optimized spec file...
+pyinstaller SystemAudioEngine.spec
 
 echo.
 echo ===========================================
