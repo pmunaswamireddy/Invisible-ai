@@ -1932,34 +1932,6 @@ class TransparentOverlay(QFrame):
                     shift_down = (ctypes.windll.user32.GetKeyState(0x10) & 0x8000) != 0
                     alt_down = ((ctypes.windll.user32.GetKeyState(0x12) & 0x8000) != 0) or bool(kbd.flags & 0x20)
                     
-                    # 0. Global Pluely Shortcuts (No leader key required)
-                    if ctrl_down and shift_down:
-                        if vk == 0x44: # D (Toggle Dashboard)
-                            self.toggle_dashboard_signal.emit()
-                            return 1
-                        elif vk == 0x49: # I (Refocus Input)
-                            self.refocus_input_signal.emit()
-                            return 1
-                        elif vk == 0x4D: # M (Toggle System Audio)
-                            self.system_audio_signal.emit()
-                            return 1
-                        elif vk == 0x41: # A (Toggle Voice Input / Dictation)
-                            self.voice_dictation_signal.emit()
-                            return 1
-                        elif vk == 0x53: # S (Capture Screenshot)
-                            self.scan_hotkey_signal.emit()
-                            return 1
-                            
-                    if ctrl_down and vk == 0xDC: # Ctrl + \ (backslash is 0xDC)
-                        self.hotkey_signal.emit()
-                        return 1
-                        
-                    if ctrl_down and vk in [0x25, 0x26, 0x27, 0x28]: # Ctrl + Arrow Keys (Move Window)
-                        dx = -10 if vk == 0x25 else (10 if vk == 0x27 else 0)
-                        dy = -10 if vk == 0x26 else (10 if vk == 0x28 else 0)
-                        self.move_window_signal.emit(dx, dy)
-                        return 1
-                        
                     # 1. Chorded Command Mode check
                     if getattr(self, 'leader_active', False):
                         is_arrow = vk in [0x25, 0x26, 0x27, 0x28]

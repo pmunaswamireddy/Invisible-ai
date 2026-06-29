@@ -359,10 +359,10 @@ class ManagerWindow(QWidget):
         b4_layout.addWidget(title4)
         
         shortcuts_text = (
-            "<b>Ctrl + \\</b> : Toggle Overlay HUD<br>"
-            "<b>Ctrl+Shift+D</b> : Settings Panel<br>"
-            "<b>Ctrl+Shift+S</b> : Capture Screen<br>"
-            "<b>Ctrl+Shift+M</b> : System Audio"
+            "<b>Alt + Z</b> : Enter Command Mode<br>"
+            "&nbsp;&nbsp;• <b>Space / H</b> : Hide Overlay HUD<br>"
+            "&nbsp;&nbsp;• <b>S</b> : Scan Target Region<br>"
+            "&nbsp;&nbsp;• <b>I</b> : Type Code Snippet"
         )
         shortcuts_lbl = QLabel(shortcuts_text)
         shortcuts_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1; line-height: 1.4;")
