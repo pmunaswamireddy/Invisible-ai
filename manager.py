@@ -8,9 +8,47 @@ import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QComboBox, 
                              QTabWidget, QFrame, QSlider, QMessageBox,
-                             QListWidget, QTextEdit)
+                             QListWidget, QTextEdit, QCheckBox)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QPixmap, QFont
+
+def apply_acrylic_blur(widget, is_dark=True):
+    import ctypes
+    from ctypes import windll, Structure, c_int, byref, c_void_p, sizeof
+    
+    class ACCENT_POLICY(Structure):
+        _fields_ = [
+            ("AccentState", c_int),
+            ("AccentFlags", c_int),
+            ("GradientColor", c_int),
+            ("AnimationId", c_int)
+        ]
+        
+    class WINDOWCOMPOSITIONATTRIBDATA(Structure):
+        _fields_ = [
+            ("Attribute", c_int),
+            ("Data", c_void_p),
+            ("SizeOfData", c_int)
+        ]
+        
+    try:
+        accent = ACCENT_POLICY()
+        accent.AccentState = 4 
+        accent.AccentFlags = 2
+        if is_dark:
+            accent.GradientColor = 0xC8141416
+        else:
+            accent.GradientColor = 0xC8F3F4F6
+            
+        data = WINDOWCOMPOSITIONATTRIBDATA()
+        data.Attribute = 19
+        data.Data = ctypes.cast(byref(accent), c_void_p)
+        data.SizeOfData = sizeof(accent)
+        
+        hwnd = int(widget.winId())
+        windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
+    except Exception as e:
+        print("Acrylic blur failed:", e)
 
 # Helper to locate resources in PyInstaller bundle
 def resource_path(relative_path):
@@ -111,10 +149,14 @@ class ManagerWindow(QWidget):
             
     def init_ui(self):
         self.setWindowTitle("Invisible AI - Manager Panel")
-        self.setFixedSize(550, 450)
+        self.setFixedSize(550, 480)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        apply_acrylic_blur(self, True)
+        
         self.setStyleSheet("""
             QWidget {
-                background-color: #111116;
+                background-color: rgba(17, 17, 22, 0.65);
                 color: #e2e8f0;
                 font-family: 'Segoe UI', sans-serif;
                 font-size: 13px;
@@ -165,6 +207,28 @@ class ManagerWindow(QWidget):
                 padding: 6px;
                 color: white;
             }
+            QComboBox {
+                background-color: #1e1e2d;
+                border: 1px solid #3f3f52;
+                border-radius: 4px;
+                padding: 6px;
+                color: white;
+            }
+            QCheckBox {
+                color: white;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                background-color: #1e1e2d;
+                border: 1px solid #3f3f52;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #8b5cf6;
+                border-color: #8b5cf6;
+            }
             QPushButton {
                 background-color: #8b5cf6;
                 color: white;
@@ -187,10 +251,35 @@ class ManagerWindow(QWidget):
         
         main_layout = QVBoxLayout(self)
         
-        # Header banner
+        # Header banner row with Close Button
+        header_row = QHBoxLayout()
         header = QLabel("🔮 INVISIBLE AI CONTROL HUB")
-        header.setStyleSheet("font-size: 18px; font-weight: bold; color: #a78bfa; margin-bottom: 10px;")
-        main_layout.addWidget(header)
+        header.setStyleSheet("font-size: 15px; font-weight: bold; color: #a78bfa;")
+        header_row.addWidget(header)
+        
+        header_row.addStretch()
+        
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #a0a0b0;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background-color: #ef4444;
+                color: white;
+            }
+        """)
+        close_btn.clicked.connect(self.close)
+        header_row.addWidget(close_btn)
+        
+        main_layout.addLayout(header_row)
         
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
@@ -204,7 +293,10 @@ class ManagerWindow(QWidget):
         # Tab 3: System Prompts
         self.init_prompts_tab()
         
-        # Tab 4: UPI Paywall / Upgrades
+        # Tab 4: App Settings
+        self.init_settings_tab()
+        
+        # Tab 5: UPI Paywall / Upgrades
         self.init_paywall_tab()
         
     def init_dashboard_tab(self):
@@ -231,7 +323,7 @@ class ManagerWindow(QWidget):
         self.launch_btn.clicked.connect(self.launch_overlay)
         layout.addWidget(self.launch_btn)
         
-        self.tabs.addTab(tab, "Dashboard")
+        self.tabs.addTab(tab, "Home")
         
     def init_config_tab(self):
         tab = QWidget()
@@ -282,7 +374,7 @@ class ManagerWindow(QWidget):
         save_btn.clicked.connect(self.save_config)
         layout.addWidget(save_btn)
         
-        self.tabs.addTab(tab, "API Settings")
+        self.tabs.addTab(tab, "APIs")
         
     def init_paywall_tab(self):
         tab = QWidget()
@@ -290,7 +382,7 @@ class ManagerWindow(QWidget):
         self.paywall_layout.setContentsMargins(20, 20, 20, 20)
         
         self.render_paywall()
-        self.tabs.addTab(tab, "Billing & Upgrade")
+        self.tabs.addTab(tab, "Billing")
         
     def render_paywall(self):
         # Clear layout first
@@ -688,6 +780,90 @@ class ManagerWindow(QWidget):
             
         # 3. Exit process instantly
         os._exit(1)
+
+    def init_settings_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 1. Autostart checkbox
+        self.autostart_cb = QCheckBox("Launch Control Hub at Windows Startup")
+        self.autostart_cb.setChecked(self.settings.get("autostart", False))
+        layout.addWidget(self.autostart_cb)
+        
+        # 2. Scan Method
+        layout.addWidget(QLabel("<b>Screen Capture Mode:</b>"))
+        self.scan_method_combo = QComboBox()
+        self.scan_method_combo.addItems(["Overlay Bounds", "Selection"])
+        self.scan_method_combo.setCurrentText(self.settings.get("scan_method", "Overlay Bounds"))
+        layout.addWidget(self.scan_method_combo)
+        
+        # 3. Response Length
+        layout.addWidget(QLabel("<b>AI Response Detail:</b>"))
+        self.resp_length_combo = QComboBox()
+        self.resp_length_combo.addItems(["Short", "Medium", "Detailed"])
+        self.resp_length_combo.setCurrentText(self.settings.get("response_length", "Medium"))
+        layout.addWidget(self.resp_length_combo)
+        
+        # 4. Response Language
+        layout.addWidget(QLabel("<b>AI Response Language:</b>"))
+        self.resp_lang_combo = QComboBox()
+        self.resp_lang_combo.addItems(["English", "Hindi", "Spanish", "Telugu", "French", "German", "Chinese", "Russian", "Arabic", "Portuguese"])
+        self.resp_lang_combo.setCurrentText(self.settings.get("response_language", "English"))
+        layout.addWidget(self.resp_lang_combo)
+        
+        layout.addStretch()
+        
+        save_settings_btn = QPushButton("Save Settings")
+        save_settings_btn.clicked.connect(self.save_app_settings)
+        layout.addWidget(save_settings_btn)
+        
+        self.tabs.addTab(tab, "Settings")
+
+    def save_app_settings(self):
+        autostart = self.autostart_cb.isChecked()
+        self.settings["autostart"] = autostart
+        self.settings["scan_method"] = self.scan_method_combo.currentText()
+        self.settings["response_length"] = self.resp_length_combo.currentText()
+        self.settings["response_language"] = self.resp_lang_combo.currentText()
+        
+        self.save_settings()
+        self.toggle_registry_autostart(autostart)
+        QMessageBox.information(self, "Success", "Application settings saved successfully.")
+        
+    def toggle_registry_autostart(self, enabled):
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "InvisibleAI_Manager"
+        exe_path = sys.executable
+        if not getattr(sys, 'frozen', False):
+            script_path = os.path.abspath(__file__)
+            exe_path = f'"{sys.executable}" "{script_path}"'
+        else:
+            exe_path = f'"{exe_path}"'
+            
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            if enabled:
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+            else:
+                try:
+                    winreg.DeleteValue(key, app_name)
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            print("Failed to toggle registry autostart:", e)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+            
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, 'drag_position'):
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
 
     def closeEvent(self, event):
         if self.verification_worker:

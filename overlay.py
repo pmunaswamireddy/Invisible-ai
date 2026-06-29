@@ -14,7 +14,7 @@ from ctypes import wintypes
 import signal
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTextEdit, QTextBrowser, QPushButton, QSlider, QLabel, QHBoxLayout, QFrame, QLineEdit, QComboBox, QSizePolicy, QListWidget, QListWidgetItem
 from PyQt5.QtCore import Qt, QPoint, QEvent, QObject, QTimer, pyqtSignal, QAbstractNativeEventFilter, QThread
-from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QMouseEvent, QPixmap, QPainterPath
+from PyQt5.QtGui import QColor, QPainter, QPen, QCursor, QMouseEvent, QPixmap, QPainterPath, QImage
 
 class KBDLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [
@@ -81,6 +81,48 @@ def translate_vk_to_char(vk, shift):
 
 HAS_MSS = True
 
+
+def apply_acrylic_blur(widget, is_dark=True):
+    # Enable Aero Glass / Acrylic Blur via undocumented SetWindowCompositionAttribute API
+    import ctypes
+    from ctypes import windll, Structure, c_int, byref, c_void_p, sizeof
+    
+    class ACCENT_POLICY(Structure):
+        _fields_ = [
+            ("AccentState", c_int),
+            ("AccentFlags", c_int),
+            ("GradientColor", c_int),
+            ("AnimationId", c_int)
+        ]
+        
+    class WINDOWCOMPOSITIONATTRIBDATA(Structure):
+        _fields_ = [
+            ("Attribute", c_int),
+            ("Data", c_void_p),
+            ("SizeOfData", c_int)
+        ]
+        
+    try:
+        accent = ACCENT_POLICY()
+        # ACCENT_ENABLE_ACRYLICBLURBEHIND = 4 (Frosted Glass Acrylic look on Windows 10/11)
+        accent.AccentState = 4 
+        accent.AccentFlags = 2 # Draw borders
+        if is_dark:
+            # Dark slate-black tint with CC alpha
+            accent.GradientColor = 0xCC161414 
+        else:
+            # Light slate tint
+            accent.GradientColor = 0xCCF6F4F3 
+            
+        data = WINDOWCOMPOSITIONATTRIBDATA()
+        data.Attribute = 19 # WCA_ACCENT_POLICY
+        data.Data = ctypes.cast(byref(accent), c_void_p)
+        data.SizeOfData = sizeof(accent)
+        
+        hwnd = int(widget.winId())
+        windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
+    except Exception as e:
+        print("Acrylic blur is unsupported or failed:", e)
 
 def get_app_dir():
     app_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'InvisibleAI')
@@ -1034,6 +1076,77 @@ class ChatHistoryItemWidget(QWidget):
         self.parent_overlay.on_chat_selected(self.parent_item)
         super().mousePressEvent(event)
 
+class SelectionOverlay(QWidget):
+    finished_signal = pyqtSignal(str) # Path to cropped image
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # Grab the full screen using Qt native methods
+        screen = QApplication.primaryScreen()
+        self.full_screenshot = screen.grabWindow(0)
+        
+        # Match primary screen geometry
+        self.setGeometry(screen.geometry())
+        self.showFullScreen()
+        self.setCursor(Qt.CrossCursor)
+        
+        self.start_pos = None
+        self.end_pos = None
+        self.is_selecting = False
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self.full_screenshot)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 100)) # Dark veil
+        
+        if self.is_selecting and self.start_pos and self.end_pos:
+            from PyQt5.QtCore import QRect
+            rect = QRect(self.start_pos, self.end_pos).normalized()
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.drawPixmap(rect, self.full_screenshot, rect)
+            
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            pen = QPen(QColor(139, 92, 246), 2)
+            painter.setPen(pen)
+            painter.drawRect(rect)
+            
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start_pos = event.pos()
+            self.end_pos = event.pos()
+            self.is_selecting = True
+            self.update()
+            
+    def mouseMoveEvent(self, event):
+        if self.is_selecting:
+            self.end_pos = event.pos()
+            self.update()
+            
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.is_selecting:
+            self.is_selecting = False
+            self.end_pos = event.pos()
+            self.crop_and_save()
+            self.close()
+            
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+            
+    def crop_and_save(self):
+        from PyQt5.QtCore import QRect
+        rect = QRect(self.start_pos, self.end_pos).normalized()
+        if rect.width() < 5 or rect.height() < 5:
+            return
+            
+        cropped = self.full_screenshot.copy(rect)
+        scan_path = os.path.join(get_app_dir(), "scan_result.png")
+        cropped.save(scan_path, "PNG")
+        self.finished_signal.emit(scan_path)
+
 class TransparentOverlay(QFrame):
     hotkey_signal = pyqtSignal()
     scan_hotkey_signal = pyqtSignal()
@@ -1112,6 +1225,7 @@ class TransparentOverlay(QFrame):
         self.setWindowFlags(flags)
         
         self.setAttribute(Qt.WA_TranslucentBackground)
+        apply_acrylic_blur(self, self.is_dark)
         self.setObjectName("overlay")
         
         layout = QVBoxLayout(self)
@@ -2344,25 +2458,47 @@ class TransparentOverlay(QFrame):
             self.start_ai_task("text", text)
 
     def scan_screen(self):
+        scan_method = getattr(self, 'settings', {}).get("scan_method", "Overlay Bounds")
+        
+        if scan_method == "Selection":
+            self.hide()
+            # Give OS half a second to complete hide animation to avoid rendering the overlay
+            QTimer.singleShot(150, self.launch_selection_cropper)
+        else:
+            self.run_bounds_scan()
+            
+    def launch_selection_cropper(self):
+        self.selection_overlay = SelectionOverlay()
+        self.selection_overlay.finished_signal.connect(self.on_selection_scan_completed)
+        # Re-display the overlay when selection overlay closes
+        self.selection_overlay.destroyed.connect(self.show)
+        
+    def run_bounds_scan(self):
         try:
             import mss
             import mss.tools
-            import uuid
-            
             with mss.mss() as sct:
                 rect = self.geometry()
                 monitor = {"top": rect.y(), "left": rect.x(), "width": rect.width(), "height": rect.height()}
                 sct_img = sct.grab(monitor)
                 scan_path = os.path.join(get_app_dir(), "scan_result.png")
                 mss.tools.to_png(sct_img.rgb, sct_img.size, output=scan_path)
-                
         except ImportError:
             self.add_system_message("<b style='color:red;'>Missing dependencies. Run pip install mss pillow</b>")
+            self.show()
             return
         except Exception as e:
             self.add_system_message(f"Screen capture failed: {str(e)}")
+            self.show()
             return
             
+        self.process_vision_scan(scan_path)
+        
+    def on_selection_scan_completed(self, scan_path):
+        self.show()
+        self.process_vision_scan(scan_path)
+        
+    def process_vision_scan(self, scan_path):
         text = self.chat_input.text().strip()
         self.chat_input.clear()
         
@@ -2389,11 +2525,26 @@ class TransparentOverlay(QFrame):
         # Load active system prompt
         prompts = getattr(self, 'settings', {}).get("prompts", [])
         active_name = getattr(self, 'settings', {}).get("active_prompt", "")
-        system_prompt = None
+        system_prompt = (
+            "You are a highly capable AI assistant operating within a stealth overlay. Provide direct, concise answers. "
+            "If providing code, always wrap it in ``` backticks. You have access to the user's Chat History. "
+            "Use context intelligently: if the user's request is a continuation, reference past history. "
+            "If they change the subject or upload a completely new image, treat it as a new context while retaining general memory."
+        )
         for p in prompts:
             if p["name"] == active_name:
                 system_prompt = p["content"]
                 break
+                
+        # Enforce response length and language constraints
+        response_length = getattr(self, 'settings', {}).get("response_length", "Medium")
+        response_language = getattr(self, 'settings', {}).get("response_language", "English")
+        
+        constraints = f"\n\n[Formatting Constraints]\n- Response Length: Provide a {response_length.lower()} response."
+        if response_language and response_language != "English":
+            constraints += f"\n- Response Language: Write the entire response in {response_language}."
+            
+        system_prompt = f"{system_prompt}{constraints}"
                 
         # Append file attachments if any
         if getattr(self, 'attached_files', []) and task_type in ["text", "vision"]:
@@ -2977,23 +3128,26 @@ class TransparentOverlay(QFrame):
         self.style().drawPrimitive(QStyle.PE_Widget, opt, p, self)
 
     def update_style(self):
+        # Refresh Acrylic blur effect on Windows
+        apply_acrylic_blur(self, self.is_dark)
+        
         # Premium dark glass vs light glass color tokens
         if self.is_dark:
-            bg_gradient = f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(22, 22, 26, {self.opacity_val}), stop:1 rgba(15, 15, 18, {self.opacity_val}))"
-            border_color = "rgba(255, 255, 255, 25)"
-            ctrl_bg = f"rgba(30, 30, 35, {self.opacity_val})"
+            bg_gradient = f"rgba(15, 15, 18, {int(self.opacity_val * 0.45)})"
+            border_color = "rgba(139, 92, 246, 70)"
+            ctrl_bg = f"rgba(30, 30, 35, {int(self.opacity_val * 0.5)})"
             ctrl_text = "#E5E7EB"
-            input_frame_bg = f"rgba(12, 12, 16, {self.opacity_val})"
+            input_frame_bg = f"rgba(12, 12, 16, {int(self.opacity_val * 0.6)})"
             input_text = "#F3F4F6"
-            sidebar_bg = f"rgba(10, 10, 12, {int(self.opacity_val * 0.45)})"
+            sidebar_bg = f"rgba(10, 10, 12, {int(self.opacity_val * 0.35)})"
         else:
-            bg_gradient = f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(250, 250, 250, {self.opacity_val}), stop:1 rgba(240, 240, 243, {self.opacity_val}))"
-            border_color = "rgba(0, 0, 0, 20)"
-            ctrl_bg = f"rgba(235, 235, 240, {self.opacity_val})"
+            bg_gradient = f"rgba(240, 240, 243, {int(self.opacity_val * 0.45)})"
+            border_color = "rgba(139, 92, 246, 50)"
+            ctrl_bg = f"rgba(235, 235, 240, {int(self.opacity_val * 0.5)})"
             ctrl_text = "#1F2937"
-            input_frame_bg = f"rgba(255, 255, 255, {self.opacity_val})"
+            input_frame_bg = f"rgba(255, 255, 255, {int(self.opacity_val * 0.6)})"
             input_text = "#111827"
-            sidebar_bg = f"rgba(243, 244, 246, {int(self.opacity_val * 0.45)})"
+            sidebar_bg = f"rgba(243, 244, 246, {int(self.opacity_val * 0.35)})"
 
         # Dynamic highlights: Purple for Command Mode, Green for Ghost Typing
         if getattr(self, 'leader_active', False):
