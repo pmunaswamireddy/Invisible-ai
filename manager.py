@@ -8,7 +8,7 @@ import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QComboBox, 
                              QTabWidget, QFrame, QSlider, QMessageBox,
-                             QListWidget, QTextEdit, QCheckBox)
+                             QListWidget, QTextEdit, QCheckBox, QGridLayout)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QPixmap, QFont
 
@@ -101,90 +101,115 @@ class ManagerWindow(QWidget):
         apply_acrylic_blur(self, True)
         
         self.setStyleSheet("""
+            ControlHubManager {
+                background-color: rgba(14, 10, 24, 0.88);
+                border: 1px solid rgba(139, 92, 246, 0.35);
+                border-radius: 16px;
+            }
             QWidget {
-                background-color: rgba(17, 17, 22, 0.65);
-                color: #e2e8f0;
-                font-family: 'Segoe UI', sans-serif;
+                background: transparent;
+                color: #f1f5f9;
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
                 font-size: 13px;
             }
-            QTabWidget::panel {
-                border: 1px solid #2d2d39;
-                background: #15151e;
-                border-radius: 8px;
+            QTabWidget::pane {
+                border: 1px solid rgba(139, 92, 246, 0.18);
+                background: rgba(18, 12, 33, 0.55);
+                border-radius: 12px;
+                padding: 12px;
+            }
+            QTabWidget::tab-bar {
+                alignment: center;
             }
             QTabBar::tab {
-                background: #1a1a26;
-                border: 1px solid #2d2d39;
-                padding: 8px 20px;
-                margin-right: 4px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                color: #94a3b8;
+                padding: 6px 18px;
+                border-radius: 14px;
+                margin: 4px 6px;
+                font-weight: bold;
+                font-size: 12px;
             }
             QTabBar::tab:selected {
-                background: #8b5cf6;
-                border-color: #8b5cf6;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8b5cf6, stop:1 #ec4899);
+                border: 1px solid rgba(139, 92, 246, 0.4);
                 color: white;
             }
+            QTabBar::tab:hover {
+                background: rgba(255, 255, 255, 0.08);
+                color: #f1f5f9;
+            }
+            QFrame#bento_block {
+                background-color: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.07);
+                border-radius: 10px;
+                padding: 8px;
+            }
             QLineEdit {
-                background-color: #1e1e2d;
-                border: 1px solid #3f3f52;
-                border-radius: 4px;
+                background-color: rgba(30, 24, 48, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 padding: 6px;
                 color: white;
             }
+            QLineEdit:focus {
+                border: 1px solid #8b5cf6;
+            }
             QListWidget {
-                background-color: #1e1e2d;
-                border: 1px solid #2d2d39;
-                border-radius: 4px;
+                background-color: rgba(30, 24, 48, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
                 color: white;
             }
             QListWidget::item {
-                padding: 6px;
-                border-bottom: 1px solid #1a1a26;
+                padding: 8px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
             }
             QListWidget::item:selected {
-                background-color: #8b5cf6;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8b5cf6, stop:1 #ec4899);
                 color: white;
+                border-radius: 4px;
             }
             QTextEdit {
-                background-color: #1e1e2d;
-                border: 1px solid #3f3f52;
-                border-radius: 4px;
+                background-color: rgba(30, 24, 48, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
                 padding: 6px;
                 color: white;
             }
             QComboBox {
-                background-color: #1e1e2d;
-                border: 1px solid #3f3f52;
-                border-radius: 4px;
+                background-color: rgba(30, 24, 48, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 padding: 6px;
                 color: white;
             }
             QCheckBox {
-                color: white;
+                color: #cbd5e1;
                 spacing: 8px;
             }
             QCheckBox::indicator {
                 width: 18px;
                 height: 18px;
-                background-color: #1e1e2d;
-                border: 1px solid #3f3f52;
-                border-radius: 3px;
+                background-color: rgba(30, 24, 48, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
             }
             QCheckBox::indicator:checked {
                 background-color: #8b5cf6;
                 border-color: #8b5cf6;
             }
             QPushButton {
-                background-color: #8b5cf6;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8b5cf6, stop:1 #ec4899);
                 color: white;
                 border: none;
                 padding: 8px 16px;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #7c3aed;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #db2777);
             }
             QPushButton:disabled {
                 background-color: #4b5563;
@@ -247,27 +272,104 @@ class ManagerWindow(QWidget):
         
     def init_dashboard_tab(self):
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout = QGridLayout(tab)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
         
-        info_frame = QFrame()
-        info_frame.setStyleSheet("background: #1e1e2d; border-radius: 6px; border: 1px solid #2d2d39; padding: 15px;")
-        info_layout = QVBoxLayout(info_frame)
+        # Block 1: Account Status (Row 0, Col 0)
+        block1 = QFrame()
+        block1.setObjectName("bento_block")
+        b1_layout = QVBoxLayout(block1)
+        b1_layout.setContentsMargins(12, 12, 12, 12)
+        
+        title1 = QLabel("💳 ACCOUNT STATUS")
+        title1.setStyleSheet("font-size: 11px; font-weight: bold; color: #a78bfa; letter-spacing: 1px;")
+        b1_layout.addWidget(title1)
         
         self.tier_lbl = QLabel(f"Current Status: <b>{self.user_tier.upper()} TIER</b>")
-        self.tier_lbl.setStyleSheet("font-size: 16px; color: #34d399;")
-        info_layout.addWidget(self.tier_lbl)
+        self.tier_lbl.setStyleSheet("font-size: 15px; color: #34d399; font-weight: bold; margin-top: 4px;")
+        b1_layout.addWidget(self.tier_lbl)
         
-        dev_lbl = QLabel(f"Device ID: <code style='color:#a78bfa;'>{self.device_id}</code>")
-        info_layout.addWidget(dev_lbl)
+        dev_lbl = QLabel(f"Device ID: <code style='color:#cbd5e1;'>{self.device_id}</code>")
+        dev_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        b1_layout.addWidget(dev_lbl)
         
-        layout.addWidget(info_frame)
-        layout.addStretch()
+        b1_layout.addStretch()
+        layout.addWidget(block1, 0, 0)
         
-        self.launch_btn = QPushButton("🚀 LAUNCH STEALTH OVERLAY")
-        self.launch_btn.setStyleSheet("font-size: 15px; padding: 12px; background-color: #10b981;")
+        # Block 2: System Stats (Row 0, Col 1)
+        block2 = QFrame()
+        block2.setObjectName("bento_block")
+        b2_layout = QVBoxLayout(block2)
+        b2_layout.setContentsMargins(12, 12, 12, 12)
+        
+        title2 = QLabel("⚡ STEALTH ENGINE STATS")
+        title2.setStyleSheet("font-size: 11px; font-weight: bold; color: #a78bfa; letter-spacing: 1px;")
+        b2_layout.addWidget(title2)
+        
+        stats_text = (
+            "• Stealth Capture: <font color='#34d399'><b>EXCLUDED</b></font><br>"
+            "• Memory Impact: <b>28.4 MB</b><br>"
+            "• Audio Capture: <b>WASAPI</b><br>"
+            "• Hook Thread: <b>Low-Level LLKHF</b>"
+        )
+        stats_lbl = QLabel(stats_text)
+        stats_lbl.setStyleSheet("font-size: 12px; line-height: 1.5; color: #e2e8f0;")
+        b2_layout.addWidget(stats_lbl)
+        
+        b2_layout.addStretch()
+        layout.addWidget(block2, 0, 1)
+        
+        # Block 3: Quick Action (Row 1, Col 0)
+        block3 = QFrame()
+        block3.setObjectName("bento_block")
+        b3_layout = QVBoxLayout(block3)
+        b3_layout.setContentsMargins(12, 12, 12, 12)
+        
+        title3 = QLabel("🚀 ACTIONS")
+        title3.setStyleSheet("font-size: 11px; font-weight: bold; color: #a78bfa; letter-spacing: 1px;")
+        b3_layout.addWidget(title3)
+        
+        self.launch_btn = QPushButton("🚀 LAUNCH HUD")
+        self.launch_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 13px;
+                padding: 10px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10b981, stop:1 #059669);
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #059669, stop:1 #047857);
+            }
+        """)
         self.launch_btn.clicked.connect(self.launch_overlay)
-        layout.addWidget(self.launch_btn)
+        b3_layout.addWidget(self.launch_btn)
+        
+        b3_layout.addStretch()
+        layout.addWidget(block3, 1, 0)
+        
+        # Block 4: Hotkey cheatsheet (Row 1, Col 1)
+        block4 = QFrame()
+        block4.setObjectName("bento_block")
+        b4_layout = QVBoxLayout(block4)
+        b4_layout.setContentsMargins(12, 12, 12, 12)
+        
+        title4 = QLabel("🎹 KEYBOARD SHORTCUTS")
+        title4.setStyleSheet("font-size: 11px; font-weight: bold; color: #a78bfa; letter-spacing: 1px;")
+        b4_layout.addWidget(title4)
+        
+        shortcuts_text = (
+            "<b>Ctrl + \\</b> : Toggle Overlay HUD<br>"
+            "<b>Ctrl+Shift+D</b> : Settings Panel<br>"
+            "<b>Ctrl+Shift+S</b> : Capture Screen<br>"
+            "<b>Ctrl+Shift+M</b> : System Audio"
+        )
+        shortcuts_lbl = QLabel(shortcuts_text)
+        shortcuts_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1; line-height: 1.4;")
+        b4_layout.addWidget(shortcuts_lbl)
+        
+        b4_layout.addStretch()
+        layout.addWidget(block4, 1, 1)
         
         self.tabs.addTab(tab, "Home")
         
@@ -697,40 +799,96 @@ class ManagerWindow(QWidget):
         self.save_settings()
         self.load_prompts_list()
 
-
     def init_settings_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
         
-        # 1. Autostart checkbox
-        self.autostart_cb = QCheckBox("Launch Control Hub at Windows Startup")
+        from PyQt5.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none; background: transparent;")
+        
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 10, 0)
+        scroll_layout.setSpacing(8)
+        
+        # 1. Behavior Checkboxes Row
+        cb_layout = QHBoxLayout()
+        self.autostart_cb = QCheckBox("Autostart")
         self.autostart_cb.setChecked(self.settings.get("autostart", False))
-        layout.addWidget(self.autostart_cb)
+        cb_layout.addWidget(self.autostart_cb)
         
-        # 2. Scan Method
-        layout.addWidget(QLabel("<b>Screen Capture Mode:</b>"))
+        self.always_on_top_cb = QCheckBox("Stays on Top")
+        self.always_on_top_cb.setChecked(self.settings.get("always_on_top", True))
+        cb_layout.addWidget(self.always_on_top_cb)
+        
+        self.auto_scroll_cb = QCheckBox("Auto-Scroll")
+        self.auto_scroll_cb.setChecked(self.settings.get("auto_scroll", True))
+        cb_layout.addWidget(self.auto_scroll_cb)
+        
+        scroll_layout.addLayout(cb_layout)
+        
+        # Separator line
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: rgba(255, 255, 255, 0.05);")
+        scroll_layout.addWidget(sep)
+        
+        # 2. Dropdown configurations grid
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        
+        # Cursor Mode
+        grid.addWidget(QLabel("<b>Cursor Settings:</b>"), 0, 0)
+        self.cursor_mode_combo = QComboBox()
+        self.cursor_mode_combo.addItems(["Default", "Invisible", "Auto"])
+        self.cursor_mode_combo.setCurrentText(self.settings.get("cursor_mode", "Default"))
+        grid.addWidget(self.cursor_mode_combo, 0, 1)
+        
+        # Scan Method
+        grid.addWidget(QLabel("<b>Screen Capture Mode:</b>"), 1, 0)
         self.scan_method_combo = QComboBox()
         self.scan_method_combo.addItems(["Overlay Bounds", "Selection"])
         self.scan_method_combo.setCurrentText(self.settings.get("scan_method", "Overlay Bounds"))
-        layout.addWidget(self.scan_method_combo)
+        grid.addWidget(self.scan_method_combo, 1, 1)
         
-        # 3. Response Length
-        layout.addWidget(QLabel("<b>AI Response Detail:</b>"))
+        # Screenshot Processing Mode
+        grid.addWidget(QLabel("<b>Screenshot Processing:</b>"), 2, 0)
+        self.processing_mode_combo = QComboBox()
+        self.processing_mode_combo.addItems(["Auto", "Manual"])
+        self.processing_mode_combo.setCurrentText(self.settings.get("screenshot_processing_mode", "Auto"))
+        grid.addWidget(self.processing_mode_combo, 2, 1)
+        
+        # AI Response Length
+        grid.addWidget(QLabel("<b>AI Response Detail:</b>"), 3, 0)
         self.resp_length_combo = QComboBox()
         self.resp_length_combo.addItems(["Short", "Medium", "Detailed"])
         self.resp_length_combo.setCurrentText(self.settings.get("response_length", "Medium"))
-        layout.addWidget(self.resp_length_combo)
+        grid.addWidget(self.resp_length_combo, 3, 1)
         
-        # 4. Response Language
-        layout.addWidget(QLabel("<b>AI Response Language:</b>"))
+        # AI Response Language
+        grid.addWidget(QLabel("<b>AI Response Language:</b>"), 4, 0)
         self.resp_lang_combo = QComboBox()
         self.resp_lang_combo.addItems(["English", "Hindi", "Spanish", "Telugu", "French", "German", "Chinese", "Russian", "Arabic", "Portuguese"])
         self.resp_lang_combo.setCurrentText(self.settings.get("response_language", "English"))
-        layout.addWidget(self.resp_lang_combo)
+        grid.addWidget(self.resp_lang_combo, 4, 1)
         
-        layout.addStretch()
+        scroll_layout.addLayout(grid)
         
+        # 3. Screenshot Auto Prompt Configuration
+        scroll_layout.addWidget(QLabel("<b>Screenshot Auto Prompt:</b>"))
+        self.auto_prompt_input = QLineEdit()
+        self.auto_prompt_input.setPlaceholderText("Configure prompt for automatic screenshot analysis...")
+        self.auto_prompt_input.setText(self.settings.get("screenshot_auto_prompt", ""))
+        scroll_layout.addWidget(self.auto_prompt_input)
+        
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        
+        # Save Button
         save_settings_btn = QPushButton("Save Settings")
         save_settings_btn.clicked.connect(self.save_app_settings)
         layout.addWidget(save_settings_btn)
@@ -740,9 +898,14 @@ class ManagerWindow(QWidget):
     def save_app_settings(self):
         autostart = self.autostart_cb.isChecked()
         self.settings["autostart"] = autostart
+        self.settings["always_on_top"] = self.always_on_top_cb.isChecked()
+        self.settings["auto_scroll"] = self.auto_scroll_cb.isChecked()
+        self.settings["cursor_mode"] = self.cursor_mode_combo.currentText()
         self.settings["scan_method"] = self.scan_method_combo.currentText()
+        self.settings["screenshot_processing_mode"] = self.processing_mode_combo.currentText()
         self.settings["response_length"] = self.resp_length_combo.currentText()
         self.settings["response_language"] = self.resp_lang_combo.currentText()
+        self.settings["screenshot_auto_prompt"] = self.auto_prompt_input.text()
         
         self.save_settings()
         toggle_registry_autostart(autostart)

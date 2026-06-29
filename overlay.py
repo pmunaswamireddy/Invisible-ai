@@ -157,6 +157,10 @@ class TransparentOverlay(QFrame):
     voice_status_signal = pyqtSignal(str)
     inject_indexed_hotkey_signal = pyqtSignal(int)
     system_audio_signal = pyqtSignal()
+    toggle_dashboard_signal = pyqtSignal()
+    refocus_input_signal = pyqtSignal()
+    voice_dictation_signal = pyqtSignal()
+    move_window_signal = pyqtSignal(int, int)
     
     def __init__(self):
         super().__init__()
@@ -179,6 +183,11 @@ class TransparentOverlay(QFrame):
         self.exit_hotkey_signal.connect(self.force_exit)
         self.voice_transcript_signal.connect(self.process_voice_input)
         self.voice_status_signal.connect(self.on_voice_status)
+        
+        self.toggle_dashboard_signal.connect(self.toggle_dashboard)
+        self.refocus_input_signal.connect(self.refocus_input)
+        self.voice_dictation_signal.connect(lambda: self.single_mic_btn.click())
+        self.move_window_signal.connect(self.move_by)
         self.stop_listening_fn = None
         
         self.typing_timer = QTimer(self)
@@ -211,7 +220,10 @@ class TransparentOverlay(QFrame):
             
         self.setWindowTitle("SystemResourceNotifyWindow")
         
-        flags = Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool
+        always_on_top = settings.get("always_on_top", True)
+        flags = Qt.FramelessWindowHint | Qt.Tool
+        if always_on_top:
+            flags |= Qt.WindowStaysOnTopHint
         if self.focus_mode == 'Background':
             flags |= Qt.WindowDoesNotAcceptFocus
         self.setWindowFlags(flags)
@@ -390,6 +402,14 @@ class TransparentOverlay(QFrame):
         self.input_layout.setContentsMargins(15, 15, 15, 10)
         self.input_layout.setSpacing(10)
         
+        # Attachments container widget
+        self.attachments_container = QWidget()
+        self.attachments_layout = QHBoxLayout(self.attachments_container)
+        self.attachments_layout.setContentsMargins(0, 0, 0, 0)
+        self.attachments_layout.setSpacing(6)
+        self.attachments_container.hide()
+        self.input_layout.addWidget(self.attachments_container)
+        
         self.chat_input = QLineEdit()
         self.chat_input.setObjectName("chat_input")
         self.chat_input.setPlaceholderText(f"Ask {self.active_provider} anything, or /imagine...")
@@ -410,6 +430,12 @@ class TransparentOverlay(QFrame):
         bottom_row.addWidget(self.provider_combo)
         
         bottom_row.addStretch()
+        
+        self.attach_btn = QPushButton("📎 Attach")
+        self.attach_btn.setObjectName("action_btn")
+        self.attach_btn.setToolTip("Attach a file or image (Hotkey: Ctrl+Shift+F)")
+        self.attach_btn.clicked.connect(self.browse_file_attachment)
+        bottom_row.addWidget(self.attach_btn)
         
         self.scan_btn = QPushButton("📷 Scan")
         self.scan_btn.setObjectName("action_btn")
@@ -520,21 +546,145 @@ class TransparentOverlay(QFrame):
     def dropEvent(self, event):
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
-            if os.path.exists(file_path):
-                ext = os.path.splitext(file_path)[1].lower()
-                allowed_exts = ['.txt', '.py', '.js', '.ts', '.html', '.css', '.json', '.c', '.cpp', '.h', '.java', '.go', '.rs', '.md', '.bat', '.sh']
-                if ext in allowed_exts:
-                    try:
-                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            content = f.read()
-                        filename = os.path.basename(file_path)
-                        self.attached_files.append({"name": filename, "content": content})
-                        size_kb = len(content.encode('utf-8')) / 1024.0
-                        self.add_system_message(f"📎 Attached file: <b>{filename}</b> ({size_kb:.1f} KB)")
-                    except Exception as e:
-                        self.add_system_message(f"❌ Failed to attach file: {str(e)}")
-                else:
-                    self.add_system_message("⚠️ Unsupported file type. Only text/code files can be attached.")
+            self.attach_file_path(file_path)
+        self.update_attachments_ui()
+
+    def browse_file_attachment(self):
+        from PyQt5.QtWidgets import QFileDialog
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Attach Files",
+            "",
+            "All Files (*.*);;Text Files (*.txt *.py *.js *.json *.html *.css *.md);;Images (*.png *.jpg *.jpeg)"
+        )
+        if file_paths:
+            for file_path in file_paths:
+                self.attach_file_path(file_path)
+            self.update_attachments_ui()
+            
+    def attach_file_path(self, file_path):
+        if not os.path.exists(file_path):
+            return
+            
+        ext = os.path.splitext(file_path)[1].lower()
+        filename = os.path.basename(file_path)
+        
+        # Image attachment support
+        if ext in ['.png', '.jpg', '.jpeg']:
+            try:
+                import base64
+                with open(file_path, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                self.attached_files.append({
+                    "name": filename,
+                    "content": encoded_string,
+                    "is_image": True,
+                    "file_path": file_path
+                })
+                self.add_system_message(f"🖼️ Attached image: <b>{filename}</b>")
+            except Exception as e:
+                self.add_system_message(f"❌ Failed to attach image: {str(e)}")
+        else:
+            # Text/code attachment support
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                self.attached_files.append({
+                    "name": filename,
+                    "content": content,
+                    "is_image": False,
+                    "file_path": file_path
+                })
+                size_kb = len(content.encode('utf-8')) / 1024.0
+                self.add_system_message(f"📎 Attached file: <b>{filename}</b> ({size_kb:.1f} KB)")
+            except Exception as e:
+                self.add_system_message(f"❌ Failed to attach file: {str(e)}")
+                
+    def remove_attachment(self, idx):
+        if 0 <= idx < len(self.attached_files):
+            self.attached_files.pop(idx)
+        self.update_attachments_ui()
+        
+    def update_attachments_ui(self):
+        for i in reversed(range(self.attachments_layout.count())):
+            widget = self.attachments_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
+                
+        if not self.attached_files:
+            self.attachments_container.hide()
+            return
+            
+        self.attachments_container.show()
+        
+        for idx, f in enumerate(self.attached_files):
+            chip = QFrame()
+            chip.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(139, 92, 246, 30);
+                    border: 1px solid rgba(139, 92, 246, 60);
+                    border-radius: 12px;
+                }
+            """)
+            chip_layout = QHBoxLayout(chip)
+            chip_layout.setContentsMargins(8, 2, 8, 2)
+            chip_layout.setSpacing(4)
+            
+            icon = "🖼️" if f.get("is_image", False) else "📄"
+            name_lbl = QLabel(f"{icon} {f['name']}")
+            name_lbl.setStyleSheet("color: #e2e8f0; font-size: 11px; background: transparent; border: none;")
+            chip_layout.addWidget(name_lbl)
+            
+            del_btn = QPushButton("✕")
+            del_btn.setFixedSize(14, 14)
+            del_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    color: rgba(239, 68, 68, 180);
+                    font-size: 10px;
+                    font-weight: bold;
+                    padding: 0;
+                }
+                QPushButton:hover {
+                    color: #ef4444;
+                }
+            """)
+            del_btn.clicked.connect(lambda checked, i=idx: self.remove_attachment(i))
+            chip_layout.addWidget(del_btn)
+            
+            self.attachments_layout.addWidget(chip)
+            
+        self.attachments_layout.addStretch()
+
+    def toggle_dashboard(self):
+        try:
+            import win32gui, win32con
+            hwnd = win32gui.FindWindow(None, "Invisible AI - Manager Panel")
+            if hwnd:
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+                return
+        except Exception:
+            pass
+            
+        import subprocess
+        if not getattr(sys, 'frozen', False):
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "manager.py"))
+            subprocess.Popen([sys.executable, script_path], creationflags=0x08000000)
+        else:
+            exe_path = sys.executable
+            dir_path = os.path.dirname(exe_path)
+            mgr_path = os.path.join(dir_path, "Manager.exe")
+            if os.path.exists(mgr_path):
+                subprocess.Popen([mgr_path], creationflags=0x08000000)
+                
+    def refocus_input(self):
+        self.show()
+        self.activateWindow()
+        self.raise_()
+        self.chat_input.setFocus()
 
     def trigger_with_bg_click(self, func):
         func()
@@ -1491,24 +1641,46 @@ class TransparentOverlay(QFrame):
         self.process_vision_scan(scan_path)
         
     def process_vision_scan(self, scan_path):
-        text = self.chat_input.text().strip()
-        self.chat_input.clear()
+        processing_mode = getattr(self, 'settings', {}).get("screenshot_processing_mode", "Auto")
         
-        default_prompt = (
-            "Extract all text from this image and display it neatly in a markdown block. "
-            "Then, if there are any questions, tests, or actionable tasks found within the text, "
-            "immediately provide the correct, direct answers below it. If there is code, solve it."
-        )
-        prompt = text if text else default_prompt
-        
-        if text:
-            self.add_user_message(text)
+        if processing_mode == "Manual":
+            # Add to attachments queue as an image
+            try:
+                import base64
+                with open(scan_path, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                filename = os.path.basename(scan_path)
+                self.attached_files.append({
+                    "name": filename,
+                    "content": encoded_string,
+                    "is_image": True,
+                    "file_path": scan_path
+                })
+                self.update_attachments_ui()
+                self.add_system_message(f"📸 Screenshot attached: <b>{filename}</b>")
+            except Exception as e:
+                self.add_system_message(f"❌ Failed to attach screenshot: {str(e)}")
+        else:
+            # Auto Mode: Submit immediately
+            text = self.chat_input.text().strip()
+            self.chat_input.clear()
             
-        self.typing_dots = 0
-        self.typing_label.setText("⚡ AI is compiling response")
-        self.typing_label.show()
-        self.typing_timer.start(400)
-        self.start_ai_task("vision", prompt, image_path=scan_path)
+            auto_prompt = getattr(self, 'settings', {}).get("screenshot_auto_prompt", "").strip()
+            default_prompt = (
+                "Extract all text from this image and display it neatly in a markdown block. "
+                "Then, if there are any questions, tests, or actionable tasks found within the text, "
+                "immediately provide the correct, direct answers below it. If there is code, solve it."
+            )
+            prompt = text if text else (auto_prompt if auto_prompt else default_prompt)
+            
+            if text:
+                self.add_user_message(text)
+                
+            self.typing_dots = 0
+            self.typing_label.setText("⚡ AI is compiling response")
+            self.typing_label.show()
+            self.typing_timer.start(400)
+            self.start_ai_task("vision", prompt, image_path=scan_path)
 
     def start_ai_task(self, task_type, prompt, image_path=None):
         session = next((s for s in self.sessions if s['id'] == self.current_chat_id), None)
@@ -1538,15 +1710,31 @@ class TransparentOverlay(QFrame):
             
         system_prompt = f"{system_prompt}{constraints}"
                 
-        # Append file attachments if any
-        if getattr(self, 'attached_files', []) and task_type in ["text", "vision"]:
-            attachments = "\n\n--- Attached Files ---"
-            for f in self.attached_files:
-                attachments += f"\n\n[File Name: {f['name']}]\n{f['content']}"
-            prompt = f"{prompt}{attachments}"
-            self.attached_files = [] # Clear attachments queue
+        text_attachments = ""
+        image_paths = []
+        
+        if image_path and os.path.exists(image_path):
+            image_paths.append(image_path)
             
-        self.worker = AITaskWorker(self.active_provider, self.api_keys, task_type, prompt, history, image_path, system_prompt)
+        if getattr(self, 'attached_files', []):
+            for f in self.attached_files:
+                if f.get("is_image", False):
+                    if f.get("file_path") and os.path.exists(f["file_path"]):
+                        image_paths.append(f["file_path"])
+                else:
+                    text_attachments += f"\n\n[File Name: {f['name']}]\n{f['content']}"
+            self.attached_files = [] # Clear attachments queue
+            self.update_attachments_ui()
+            
+        if text_attachments:
+            prompt = f"{prompt}\n\n--- Attached Files ---{text_attachments}"
+            
+        if image_paths:
+            task_type = "vision"
+            
+        worker_image = image_paths if len(image_paths) > 1 else (image_paths[0] if image_paths else None)
+        
+        self.worker = AITaskWorker(self.active_provider, self.api_keys, task_type, prompt, history, worker_image, system_prompt)
         self.worker.finished_signal.connect(self.on_ai_finished)
         self.worker.error_signal.connect(self.on_ai_error)
         self.worker.start()
@@ -1744,6 +1932,34 @@ class TransparentOverlay(QFrame):
                     shift_down = (ctypes.windll.user32.GetKeyState(0x10) & 0x8000) != 0
                     alt_down = ((ctypes.windll.user32.GetKeyState(0x12) & 0x8000) != 0) or bool(kbd.flags & 0x20)
                     
+                    # 0. Global Pluely Shortcuts (No leader key required)
+                    if ctrl_down and shift_down:
+                        if vk == 0x44: # D (Toggle Dashboard)
+                            self.toggle_dashboard_signal.emit()
+                            return 1
+                        elif vk == 0x49: # I (Refocus Input)
+                            self.refocus_input_signal.emit()
+                            return 1
+                        elif vk == 0x4D: # M (Toggle System Audio)
+                            self.system_audio_signal.emit()
+                            return 1
+                        elif vk == 0x41: # A (Toggle Voice Input / Dictation)
+                            self.voice_dictation_signal.emit()
+                            return 1
+                        elif vk == 0x53: # S (Capture Screenshot)
+                            self.scan_hotkey_signal.emit()
+                            return 1
+                            
+                    if ctrl_down and vk == 0xDC: # Ctrl + \ (backslash is 0xDC)
+                        self.hotkey_signal.emit()
+                        return 1
+                        
+                    if ctrl_down and vk in [0x25, 0x26, 0x27, 0x28]: # Ctrl + Arrow Keys (Move Window)
+                        dx = -10 if vk == 0x25 else (10 if vk == 0x27 else 0)
+                        dy = -10 if vk == 0x26 else (10 if vk == 0x28 else 0)
+                        self.move_window_signal.emit(dx, dy)
+                        return 1
+                        
                     # 1. Chorded Command Mode check
                     if getattr(self, 'leader_active', False):
                         is_arrow = vk in [0x25, 0x26, 0x27, 0x28]
@@ -1943,6 +2159,20 @@ class TransparentOverlay(QFrame):
             
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Enter:
+            cursor_mode = getattr(self, 'settings', {}).get("cursor_mode", "Default")
+            if cursor_mode == "Invisible":
+                self.setCursor(Qt.BlankCursor)
+                if hasattr(obj, 'setCursor'):
+                    obj.setCursor(Qt.BlankCursor)
+            elif cursor_mode == "Default":
+                self.setCursor(Qt.ArrowCursor)
+                if hasattr(obj, 'setCursor'):
+                    obj.setCursor(Qt.ArrowCursor)
+            else:
+                self.unsetCursor()
+                if hasattr(obj, 'unsetCursor'):
+                    obj.unsetCursor()
+                    
             if hasattr(obj, 'toolTip') and obj.toolTip():
                 from PyQt5.QtWidgets import QToolTip
                 QToolTip.showText(QCursor.pos(), obj.toolTip(), obj)

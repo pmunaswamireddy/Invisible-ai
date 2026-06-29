@@ -323,18 +323,26 @@ class AITaskWorker(QThread):
                     
                     try:
                         model = genai.GenerativeModel('gemini-2.5-flash')
-                        if self.task_type == "vision" and self.image_path and os.path.exists(self.image_path):
-                            img = PIL.Image.open(self.image_path)
-                            response = model.generate_content([full_prompt, img])
+                        if self.task_type == "vision" and self.image_path:
+                            contents = [full_prompt]
+                            paths = self.image_path if isinstance(self.image_path, list) else [self.image_path]
+                            for p_path in paths:
+                                if os.path.exists(p_path):
+                                    contents.append(PIL.Image.open(p_path))
+                            response = model.generate_content(contents)
                         else:
                             response = model.generate_content(full_prompt)
                         text_response = response.text
                     except Exception as e:
                         try:
                             model = genai.GenerativeModel('gemini-1.5-flash')
-                            if self.task_type == "vision" and self.image_path and os.path.exists(self.image_path):
-                                img = PIL.Image.open(self.image_path)
-                                response = model.generate_content([full_prompt, img])
+                            if self.task_type == "vision" and self.image_path:
+                                contents = [full_prompt]
+                                paths = self.image_path if isinstance(self.image_path, list) else [self.image_path]
+                                for p_path in paths:
+                                    if os.path.exists(p_path):
+                                        contents.append(PIL.Image.open(p_path))
+                                response = model.generate_content(contents)
                             else:
                                 response = model.generate_content(full_prompt)
                             text_response = response.text
