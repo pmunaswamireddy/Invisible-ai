@@ -1,6 +1,6 @@
-# Invisible AI Overlay
+# Invisible AI Control Hub
 
-A highly stealthy, ultra-lightweight, floating AI assistant that sits completely invisibly on your Windows desktop. Built for maximum privacy, latency-free operation, and advanced hardware-level interaction.
+A highly stealthy, ultra-lightweight, floating AI assistant that sits completely invisibly on your Windows desktop. Built for maximum privacy, latency-free operation, and advanced hardware-level interaction. Equipped with a visible settings controller/paywall manager and a stealth overlay engine.
 
 ---
 
@@ -12,16 +12,16 @@ A highly stealthy, ultra-lightweight, floating AI assistant that sits completely
 - **Stealth Clicks (WM_MOUSELEAVE Bypass):** Unlike standard overlays that toggle focus on hover (triggering mouse-leave events on the active window), this overlay remains `WS_EX_TRANSPARENT` constantly. Clicks on the overlay are intercepted at the hardware level using `WH_MOUSE_LL` hooks, blocked from the OS, and routed directly to the overlay's widgets. **The browser never knows you clicked outside.**
 - **Hotkey Repositioning:** Silently move the overlay using keyboard shortcut chords. This avoids moving the mouse to the overlay, which could leave a trail or trigger mouse-out alerts.
 
-### 2. ⚡ Latency & CPU Optimization
-- **Zero Polling Lag:** The heavy 50Hz timer that polled window styles has been completely removed. Hit-testing is now calculated on-demand upon hardware input, dropping CPU usage to 0%.
-- **Decompressed Execution:** Startup time is reduced by over 50% (~0.9s load time) by disabling runtime UPX decompression.
-- **Level-2 Bytecode Optimization:** Compiled with `-OO` flags to strip debug code, docstrings, and assertions for a lightweight runtime footprint.
-- **Deferred Imports:** Large libraries (such as `mss` for screen capture) are deferred to import only when triggered, minimizing initial memory allocation.
+### 2. 🎛️ Control Hub Settings Manager (`Manager.exe`)
+- **Centralized Panel:** A visible settings panel to configure Gemini, Groq, OpenRouter, and custom OpenAI-compatible endpoints.
+- **System Prompts Manager:** Add, edit, delete, and select active system prompts to control the AI's response style.
+- **Paywall Integration:** Built-in UPI payment QR generation, 12-digit UTR verification pings to Firestore, and Discord webhook notifications.
 
-### 3. 🛠️ Power User Tools
-- **Ghost Typing / Typist Mode:** Simulates hardware keyboard presses (`SendInput`) to type AI responses into target editors character-by-character to bypass clipboard monitors.
-- **Vision Screen Scanning:** Instantly crop and scan the overlay's bounds, feeding screenshot snippets directly to the AI model.
-- **PowerShell-based TTS:** Speaks responses using Windows SAPI via PowerShell subprocesses, avoiding heavy third-party speech libraries.
+### 3. 🔊 System Audio Loopback Transcription (Meetings & Interviews)
+- **WASAPI Capture:** Capture and transcribe system audio output (e.g. other speakers in Zoom, Google Meet, Teams, or browser audio) using Windows WASAPI loopback, transcribing questions in real-time.
+
+### 4. 📎 File Drag-and-Drop Context
+- Drag and drop code, configuration, or document files directly onto the overlay window to append their contents to your prompt as context chips.
 
 ---
 
@@ -34,7 +34,8 @@ Press the leader chord **`Alt + Z`** to activate **Command Mode**, followed by o
 | **`Esc`** | Deactivate Command Mode |
 | **`Space`** or **`H`** | Toggle visibility (dock to edge) |
 | **`K`** | Toggle Ghost Typing / Typist Mode |
-| **`P`** | Rotate AI Model / Provider (Gemini ⇄ Groq ⇄ OpenRouter) |
+| **`P`** | Rotate AI Model / Provider (Gemini ⇄ Groq ⇄ OpenRouter ⇄ Custom API ⇄ Search) |
+| **`A`** | Toggle System Audio loopback recording (Meetings capture) |
 | **`S`** | Scan Screen |
 | **`I`** | Inject latest AI code block |
 | **`1-9`** | Inject specific indexed code block (Top row or Numpad) |
@@ -53,7 +54,7 @@ Press the leader chord **`Alt + Z`** to activate **Command Mode**, followed by o
 ## 💡 Pro Tips & Anti-Detection Guidelines
 
 > [!WARNING]
-> **Avoid Drag and Drop:** Dragging text from a browser window into the overlay fires standard HTML5 `dragleave` and `dragend` events inside the browser. Proctoring tools track these events and will register that text was dragged outside. Always use copy-paste or hotkey-based copy-injection.
+> **Drag and Drop from Web Pages:** Dragging text from a browser window into the overlay fires standard HTML5 `dragleave` and `dragend` events inside the browser. Proctoring tools track these events. Only drag and drop **local files** (from Explorer) into the overlay, as they are processed entirely internally and are safe. For browser text, use copy-paste or hotkey-based scanning.
 
 > [!IMPORTANT]
 > **Silent Repositioning:** When in strict proctored environments, do not drag the overlay with your mouse. Instead, press `Alt + Z` and use the **Arrow Keys** to move the window. This is completely internal and undetectable.
@@ -66,15 +67,10 @@ Press the leader chord **`Alt + Z`** to activate **Command Mode**, followed by o
 ## 🛠️ Compilation & Setup
 
 ### API Keys
-Ensure a `.env` file exists in the directory containing your API keys:
-```env
-GEMINI_API_KEY=your_gemini_key
-GROQ_API_KEY=your_groq_key
-OPENROUTER_API_KEY=your_openrouter_key
-```
+All configurations are stored in `%APPDATA%\InvisibleAI\settings.json` (created automatically by the settings Manager panel).
 
 ### Building the Executable
 Run `build_exe.bat`. This:
 1. Activates the `.venv` virtual environment.
-2. Builds the executable `SystemAudioEngine.exe` into the `dist/` folder using the optimized spec file `SystemAudioEngine.spec`.
-3. **Preserves previous builds** (does not delete existing executables in `dist`).
+2. Compiles both `Manager.exe` and `SystemAudioEngine.exe` into the `dist/` folder using the dual-target configuration spec `SystemAudioEngine.spec`.
+3. Preserves previous builds.

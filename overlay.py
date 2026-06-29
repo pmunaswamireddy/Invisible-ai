@@ -514,11 +514,133 @@ class VoiceSetupWorker(QThread):
         except Exception as e:
             self.error_signal.emit(str(e))
 
+class SystemAudioWorker(QThread):
+    finished_signal = pyqtSignal(str) # Transcribed text
+    error_signal = pyqtSignal(str)
+    status_signal = pyqtSignal(str)
+    
+    def __init__(self, duration=10):
+        super().__init__()
+        self.duration = duration
+        self.running = True
+        
+    def stop(self):
+        self.running = False
+        
+    def run(self):
+        import pyaudio
+        import wave
+        import tempfile
+        import uuid
+        import os
+        
+        p = pyaudio.PyAudio()
+        
+        # Search for Windows WASAPI loopback device
+        wasapi_info = None
+        for i in range(p.get_host_api_count()):
+            api_info = p.get_host_api_info_by_index(i)
+            if "wasapi" in api_info.get('name', '').lower():
+                wasapi_info = api_info
+                break
+                
+        if not wasapi_info:
+            self.error_signal.emit("Windows WASAPI audio driver not found.")
+            p.terminate()
+            return
+            
+        loopback_dev = None
+        for i in range(p.get_device_count()):
+            dev = p.get_device_info_by_index(i)
+            if dev.get('hostApi') == wasapi_info.get('index') and dev.get('maxInputChannels') > 0:
+                if "loopback" in dev.get('name', '').lower():
+                    loopback_dev = dev
+                    break
+                    
+        if not loopback_dev:
+            # Fallback to default input under WASAPI
+            default_idx = wasapi_info.get('defaultInputDevice')
+            if default_idx is not None and default_idx >= 0:
+                loopback_dev = p.get_device_info_by_index(default_idx)
+                
+        if not loopback_dev:
+            self.error_signal.emit("System loopback audio device not found.")
+            p.terminate()
+            return
+            
+        dev_idx = loopback_dev.get('index')
+        rate = int(loopback_dev.get('defaultSampleRate', 48000))
+        channels = 2
+        
+        self.status_signal.emit("🎤 Recording System Audio...")
+        
+        frames = []
+        try:
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=channels,
+                rate=rate,
+                input=True,
+                input_device_index=dev_idx,
+                frames_per_buffer=1024
+            )
+        except Exception as e:
+            self.error_signal.emit(f"Failed to open loopback stream: {e}")
+            p.terminate()
+            return
+            
+        ticks = int(rate / 1024 * self.duration)
+        for _ in range(ticks):
+            if not self.running:
+                break
+            try:
+                data = stream.read(1024, exception_on_overflow=False)
+                frames.append(data)
+            except Exception:
+                pass
+                
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        
+        if not frames:
+            self.error_signal.emit("No audio frames recorded.")
+            return
+            
+        temp_wav = os.path.join(tempfile.gettempdir(), f"loopback_temp_{uuid.uuid4().hex[:8]}.wav")
+        try:
+            wf = wave.open(temp_wav, 'wb')
+            wf.setnchannels(channels)
+            wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(rate)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+        except Exception as e:
+            self.error_signal.emit(f"WAV save error: {e}")
+            return
+            
+        self.status_signal.emit("🧠 Transcribing System Audio...")
+        try:
+            # pyrefly: ignore [missing-import]
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            with sr.AudioFile(temp_wav) as source:
+                audio = r.record(source)
+            text = r.recognize_google(audio)
+            self.finished_signal.emit(text)
+        except Exception as e:
+            self.error_signal.emit(f"Transcription error: {str(e)}")
+        finally:
+            try:
+                os.remove(temp_wav)
+            except Exception:
+                pass
+
 class AITaskWorker(QThread):
     finished_signal = pyqtSignal(str, str, str) # type, content, raw_code
     error_signal = pyqtSignal(str)
 
-    def __init__(self, provider, api_keys, task_type, prompt, history=None, image_path=None):
+    def __init__(self, provider, api_keys, task_type, prompt, history=None, image_path=None, system_prompt=None):
         super().__init__()
         self.provider = provider
         self.api_keys = api_keys
@@ -526,6 +648,7 @@ class AITaskWorker(QThread):
         self.prompt = prompt
         self.history = history or []
         self.image_path = image_path
+        self.system_prompt = system_prompt
 
     def run(self):
         import urllib.request
@@ -544,7 +667,7 @@ class AITaskWorker(QThread):
                 self.finished_signal.emit("image", save_path, "")
                 
             elif self.task_type in ["text", "vision"]:
-                system_prompt = (
+                system_prompt = self.system_prompt or (
                     "You are a highly capable AI assistant operating within a stealth overlay. Provide direct, concise answers. "
                     "If providing code, always wrap it in ``` backticks. You have access to the user's Chat History. "
                     "Use context intelligently: if the user's request is a continuation, reference past history. "
@@ -648,6 +771,7 @@ class AITaskWorker(QThread):
                     
                 elif active_provider == "Custom API":
                     try:
+                        # pyrefly: ignore [missing-import]
                         import openai
                     except ImportError:
                         self.error_signal.emit("openai is not installed.")
@@ -927,6 +1051,7 @@ class TransparentOverlay(QFrame):
     voice_transcript_signal = pyqtSignal(str)
     voice_status_signal = pyqtSignal(str)
     inject_indexed_hotkey_signal = pyqtSignal(int)
+    system_audio_signal = pyqtSignal()
     
     def __init__(self):
         super().__init__()
@@ -938,6 +1063,7 @@ class TransparentOverlay(QFrame):
         self.send_hotkey_signal.connect(self.handle_chat)
         self.focus_hotkey_signal.connect(self.toggle_focus_mode)
         self.clear_hotkey_signal.connect(self.clear_chat)
+        self.system_audio_signal.connect(self.toggle_system_audio_recording)
         
         self.ghost_char_signal.connect(self.on_ghost_char)
         self.ghost_backspace_signal.connect(self.on_ghost_backspace)
@@ -1239,6 +1365,12 @@ class TransparentOverlay(QFrame):
         self.mic_btn.clicked.connect(self.toggle_continuous_voice)
         bottom_row.addWidget(self.mic_btn)
         
+        self.loopback_btn = QPushButton("🔊")
+        self.loopback_btn.setObjectName("action_btn")
+        self.loopback_btn.setToolTip("Capture System Audio / Meetings (Hotkey: Alt+Z then A)")
+        self.loopback_btn.clicked.connect(self.toggle_system_audio_recording)
+        bottom_row.addWidget(self.loopback_btn)
+        
         self.wave_widget = AudioWaveWidget()
         self.wave_widget.hide()
         bottom_row.addWidget(self.wave_widget)
@@ -1264,13 +1396,40 @@ class TransparentOverlay(QFrame):
         
         for widget in [self.theme_btn, self.focus_btn, self.clear_btn, self.hide_btn, self.close_btn,
                        self.provider_combo, self.scan_btn, self.inject_btn, self.voice_btn,
-                       self.single_mic_btn, self.mic_btn, self.send_btn, self.new_chat_btn, self.clear_all_btn]:
+                       self.single_mic_btn, self.mic_btn, self.loopback_btn, self.send_btn, self.new_chat_btn, self.clear_all_btn]:
             widget.installEventFilter(self)
             
         self.update_style()
         self.load_chat_history()
         self.install_keyboard_hook()
         
+        self.setAcceptDrops(True)
+        self.attached_files = []
+        self.system_audio_worker = None
+        
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if os.path.exists(file_path):
+                ext = os.path.splitext(file_path)[1].lower()
+                allowed_exts = ['.txt', '.py', '.js', '.ts', '.html', '.css', '.json', '.c', '.cpp', '.h', '.java', '.go', '.rs', '.md', '.bat', '.sh']
+                if ext in allowed_exts:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                        filename = os.path.basename(file_path)
+                        self.attached_files.append({"name": filename, "content": content})
+                        size_kb = len(content.encode('utf-8')) / 1024.0
+                        self.add_system_message(f"📎 Attached file: <b>{filename}</b> ({size_kb:.1f} KB)")
+                    except Exception as e:
+                        self.add_system_message(f"❌ Failed to attach file: {str(e)}")
+                else:
+                    self.add_system_message("⚠️ Unsupported file type. Only text/code files can be attached.")
+
     def trigger_with_bg_click(self, func):
         func()
         def _click():
@@ -2226,7 +2385,25 @@ class TransparentOverlay(QFrame):
     def start_ai_task(self, task_type, prompt, image_path=None):
         session = next((s for s in self.sessions if s['id'] == self.current_chat_id), None)
         history = session['messages'] if session else []
-        self.worker = AITaskWorker(self.active_provider, self.api_keys, task_type, prompt, history, image_path)
+        
+        # Load active system prompt
+        prompts = getattr(self, 'settings', {}).get("prompts", [])
+        active_name = getattr(self, 'settings', {}).get("active_prompt", "")
+        system_prompt = None
+        for p in prompts:
+            if p["name"] == active_name:
+                system_prompt = p["content"]
+                break
+                
+        # Append file attachments if any
+        if getattr(self, 'attached_files', []) and task_type in ["text", "vision"]:
+            attachments = "\n\n--- Attached Files ---"
+            for f in self.attached_files:
+                attachments += f"\n\n[File Name: {f['name']}]\n{f['content']}"
+            prompt = f"{prompt}{attachments}"
+            self.attached_files = [] # Clear attachments queue
+            
+        self.worker = AITaskWorker(self.active_provider, self.api_keys, task_type, prompt, history, image_path, system_prompt)
         self.worker.finished_signal.connect(self.on_ai_finished)
         self.worker.error_signal.connect(self.on_ai_error)
         self.worker.start()
@@ -2487,6 +2664,9 @@ class TransparentOverlay(QFrame):
                             return 1
                         elif vk == 0x4D: # M (Toggle Continuous Mic)
                             self.mic_btn.click()
+                            return 1
+                        elif vk == 0x41: # A (Toggle System Audio Loopback)
+                            self.system_audio_signal.emit()
                             return 1
                         elif vk == 0x55: # U (Toggle Single Voice Typist)
                             self.single_mic_btn.click()
@@ -3140,6 +3320,37 @@ class TransparentOverlay(QFrame):
             self.suppress_scroll = False
             QApplication.processEvents()
             scrollbar.setValue(scroll_pos)
+
+    def toggle_system_audio_recording(self):
+        # Premium check
+        if getattr(self, 'user_tier', 'Free') not in ["Pro", "Ultra"]:
+            self.add_system_message("🔒 Upgrade Required: <b>System Audio Loopback Transcription</b> is a Pro/Ultra feature. Please upgrade in the Manager Panel.")
+            return
+            
+        if self.system_audio_worker and self.system_audio_worker.isRunning():
+            self.system_audio_worker.stop()
+            self.add_system_message("⏹️ Stopping system audio recording...")
+            return
+            
+        self.system_audio_worker = SystemAudioWorker(duration=15)
+        self.system_audio_worker.status_signal.connect(self.add_system_message)
+        self.system_audio_worker.finished_signal.connect(self.on_system_audio_transcribed)
+        self.system_audio_worker.error_signal.connect(self.on_system_audio_error)
+        self.system_audio_worker.start()
+        
+    def on_system_audio_transcribed(self, text):
+        self.system_audio_worker = None
+        if not text.strip():
+            self.add_system_message("⚠️ No system audio speech detected.")
+            return
+        self.add_system_message(f"🔊 Transcribed System Audio: <i>{text}</i>")
+        self.chat_input.setText(text)
+        # Send immediately
+        self.handle_chat(voice_input=True)
+        
+    def on_system_audio_error(self, err_msg):
+        self.system_audio_worker = None
+        self.add_system_message(f"❌ System Audio Error: {err_msg}")
 
     def check_security_integrity(self):
         if getattr(sys, 'frozen', False):

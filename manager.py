@@ -7,7 +7,8 @@ import urllib.parse
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QComboBox, 
-                             QTabWidget, QFrame, QSlider, QMessageBox)
+                             QTabWidget, QFrame, QSlider, QMessageBox,
+                             QListWidget, QTextEdit)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QPixmap, QFont
 
@@ -143,6 +144,27 @@ class ManagerWindow(QWidget):
                 padding: 6px;
                 color: white;
             }
+            QListWidget {
+                background-color: #1e1e2d;
+                border: 1px solid #2d2d39;
+                border-radius: 4px;
+                color: white;
+            }
+            QListWidget::item {
+                padding: 6px;
+                border-bottom: 1px solid #1a1a26;
+            }
+            QListWidget::item:selected {
+                background-color: #8b5cf6;
+                color: white;
+            }
+            QTextEdit {
+                background-color: #1e1e2d;
+                border: 1px solid #3f3f52;
+                border-radius: 4px;
+                padding: 6px;
+                color: white;
+            }
             QPushButton {
                 background-color: #8b5cf6;
                 color: white;
@@ -179,7 +201,10 @@ class ManagerWindow(QWidget):
         # Tab 2: Provider & API Configuration
         self.init_config_tab()
         
-        # Tab 3: UPI Paywall / Upgrades
+        # Tab 3: System Prompts
+        self.init_prompts_tab()
+        
+        # Tab 4: UPI Paywall / Upgrades
         self.init_paywall_tab()
         
     def init_dashboard_tab(self):
@@ -471,6 +496,169 @@ class ManagerWindow(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Launch Error", f"Failed to launch overlay engine: {e}")
             
+    def init_prompts_tab(self):
+        tab = QWidget()
+        layout = QHBoxLayout(tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Left side: list of prompts and add/delete buttons
+        left_layout = QVBoxLayout()
+        self.prompts_list = QListWidget()
+        self.prompts_list.itemClicked.connect(self.on_prompt_selected)
+        left_layout.addWidget(self.prompts_list)
+        
+        btn_row = QHBoxLayout()
+        add_btn = QPushButton("New")
+        add_btn.clicked.connect(self.add_new_prompt)
+        btn_row.addWidget(add_btn)
+        
+        del_btn = QPushButton("Delete")
+        del_btn.setStyleSheet("background-color: #ef4444;")
+        del_btn.clicked.connect(self.delete_prompt)
+        btn_row.addWidget(del_btn)
+        left_layout.addLayout(btn_row)
+        layout.addLayout(left_layout, 2)
+        
+        # Right side: editing fields
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(QLabel("<b>Prompt Name:</b>"))
+        self.prompt_name_input = QLineEdit()
+        right_layout.addWidget(self.prompt_name_input)
+        
+        right_layout.addWidget(QLabel("<b>System Instructions:</b>"))
+        self.prompt_content_input = QTextEdit()
+        right_layout.addWidget(self.prompt_content_input)
+        
+        action_row = QHBoxLayout()
+        save_prompt_btn = QPushButton("Save")
+        save_prompt_btn.clicked.connect(self.save_prompt_edits)
+        action_row.addWidget(save_prompt_btn)
+        
+        self.active_prompt_btn = QPushButton("Set Active")
+        self.active_prompt_btn.setStyleSheet("background-color: #10b981;")
+        self.active_prompt_btn.clicked.connect(self.set_prompt_active)
+        action_row.addWidget(self.active_prompt_btn)
+        
+        right_layout.addLayout(action_row)
+        layout.addLayout(right_layout, 3)
+        
+        self.tabs.addTab(tab, "Prompts")
+        
+        # Load from settings
+        self.custom_prompts = self.settings.get("prompts", [
+            {
+                "name": "Standard AI Assistant",
+                "content": "You are a highly capable AI assistant operating within a stealth overlay. Provide direct, concise answers. If providing code, always wrap it in ``` backticks. You have access to the user's Chat History. Use context intelligently."
+            },
+            {
+                "name": "Software Engineer Interview",
+                "content": "You are an expert software engineer helper. Provide clean, production-ready, optimally-formatted code solutions with zero extra conversational fluff. Do not explain unless specifically asked."
+            }
+        ])
+        self.active_prompt_name = self.settings.get("active_prompt", "Standard AI Assistant")
+        self.load_prompts_list()
+
+    def load_prompts_list(self):
+        self.prompts_list.clear()
+        for p in self.custom_prompts:
+            name = p["name"]
+            if name == self.active_prompt_name:
+                name = f"⭐ {name}"
+            self.prompts_list.addItem(name)
+        if self.prompts_list.count() > 0:
+            self.prompts_list.setCurrentRow(0)
+            self.on_prompt_selected(self.prompts_list.item(0))
+
+    def on_prompt_selected(self, item):
+        if not item: return
+        clean_name = item.text().replace("⭐ ", "")
+        for p in self.custom_prompts:
+            if p["name"] == clean_name:
+                self.prompt_name_input.setText(p["name"])
+                self.prompt_content_input.setText(p["content"])
+                if p["name"] == self.active_prompt_name:
+                    self.active_prompt_btn.setEnabled(False)
+                    self.active_prompt_btn.setText("Active")
+                else:
+                    self.active_prompt_btn.setEnabled(True)
+                    self.active_prompt_btn.setText("Set Active")
+                break
+
+    def add_new_prompt(self):
+        new_name = f"Custom Prompt {len(self.custom_prompts) + 1}"
+        new_prompt = {
+            "name": new_name,
+            "content": "Enter system prompt instructions here..."
+        }
+        self.custom_prompts.append(new_prompt)
+        self.settings["prompts"] = self.custom_prompts
+        self.save_settings()
+        self.load_prompts_list()
+        for i in range(self.prompts_list.count()):
+            if self.prompts_list.item(i).text() == new_name:
+                self.prompts_list.setCurrentRow(i)
+                self.on_prompt_selected(self.prompts_list.item(i))
+                break
+
+    def delete_prompt(self):
+        curr_row = self.prompts_list.currentRow()
+        if curr_row < 0: return
+        item = self.prompts_list.item(curr_row)
+        clean_name = item.text().replace("⭐ ", "")
+        
+        if clean_name == self.active_prompt_name:
+            QMessageBox.warning(self, "Delete Denied", "Cannot delete the active prompt. Set another prompt active first.")
+            return
+            
+        reply = QMessageBox.question(self, 'Delete Prompt', f"Delete '{clean_name}'?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.custom_prompts = [p for p in self.custom_prompts if p["name"] != clean_name]
+            self.settings["prompts"] = self.custom_prompts
+            self.save_settings()
+            self.load_prompts_list()
+
+    def save_prompt_edits(self):
+        curr_row = self.prompts_list.currentRow()
+        if curr_row < 0: return
+        item = self.prompts_list.item(curr_row)
+        old_name = item.text().replace("⭐ ", "")
+        new_name = self.prompt_name_input.text().strip()
+        new_content = self.prompt_content_input.toPlainText().strip()
+        
+        if not new_name:
+            QMessageBox.warning(self, "Invalid Name", "Prompt name cannot be empty.")
+            return
+            
+        for p in self.custom_prompts:
+            if p["name"] == old_name:
+                p["name"] = new_name
+                p["content"] = new_content
+                break
+                
+        if old_name == self.active_prompt_name:
+            self.active_prompt_name = new_name
+            self.settings["active_prompt"] = new_name
+            
+        self.settings["prompts"] = self.custom_prompts
+        self.save_settings()
+        self.load_prompts_list()
+        for i in range(self.prompts_list.count()):
+            check_name = self.prompts_list.item(i).text().replace("⭐ ", "")
+            if check_name == new_name:
+                self.prompts_list.setCurrentRow(i)
+                break
+
+    def set_prompt_active(self):
+        curr_row = self.prompts_list.currentRow()
+        if curr_row < 0: return
+        item = self.prompts_list.item(curr_row)
+        clean_name = item.text().replace("⭐ ", "")
+        
+        self.active_prompt_name = clean_name
+        self.settings["active_prompt"] = clean_name
+        self.save_settings()
+        self.load_prompts_list()
+
     def check_security_integrity(self):
         import ctypes
         if getattr(sys, 'frozen', False):
