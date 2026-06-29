@@ -38,3 +38,40 @@ exe = EXE(
     entitlements_file=None,
 )
 
+a_mgr = Analysis(
+    ['manager.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'unittest', 'pyttsx3'],
+    noarchive=False,
+    optimize=2,
+)
+pyz_mgr = PYZ(a_mgr.pure)
+
+exe_mgr = EXE(
+    pyz_mgr,
+    a_mgr.scripts,
+    a_mgr.binaries,
+    a_mgr.datas,
+    [],
+    name='Manager',
+    debug=False,
+    bootloader_ignore_signals=False,
+    icon='app_icon.ico',
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+

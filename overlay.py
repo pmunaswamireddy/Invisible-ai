@@ -646,6 +646,38 @@ class AITaskWorker(QThread):
                     )
                     text_response = chat_completion.choices[0].message.content
                     
+                elif active_provider == "Custom API":
+                    try:
+                        import openai
+                    except ImportError:
+                        self.error_signal.emit("openai is not installed.")
+                        return
+                        
+                    base_url = self.api_keys.get("custom_api_base", "")
+                    api_key = self.api_keys.get("custom_api_key", "")
+                    model_name = self.api_keys.get("custom_api_model", "")
+                    
+                    if not api_key:
+                        self.error_signal.emit("Custom API Key is missing. Configure it in Manager Panel.")
+                        return
+                    if not base_url:
+                        base_url = "https://api.openai.com/v1"
+                    if not model_name:
+                        model_name = "gpt-4o"
+                        
+                    client = openai.OpenAI(base_url=base_url, api_key=api_key)
+                    messages = [{"role": "system", "content": system_prompt}]
+                    for msg in self.history:
+                        if msg['role'] == 'user': messages.append({"role": "user", "content": msg['content']})
+                        elif msg['role'] == 'ai': messages.append({"role": "assistant", "content": msg['content']})
+                    messages.append({"role": "user", "content": self.prompt})
+                    
+                    chat_completion = client.chat.completions.create(
+                        messages=messages,
+                        model=model_name,
+                    )
+                    text_response = chat_completion.choices[0].message.content
+                    
                 elif active_provider == "OpenRouter":
                     try:
                         # pyrefly: ignore [missing-import]
@@ -931,7 +963,17 @@ class TransparentOverlay(QFrame):
         
         settings = self.load_settings()
         self.is_dark = settings.get("is_dark", True)
+        self.user_tier = settings.get("tier", "Free")
         self.focus_mode = settings.get("focus_mode", "Background")
+        if self.user_tier not in ["Pro", "Ultra"] and self.focus_mode == "Background":
+            self.focus_mode = "Overlay"
+            
+        # Anti-Tampering Check on Startup
+        self.security_timer = QTimer(self)
+        self.security_timer.timeout.connect(self.check_security_integrity)
+        self.security_timer.start(5000) # Check every 5 seconds
+        self.check_security_integrity()
+            
         self.dock_edge = settings.get("dock_edge", "right")
         self.opacity_val = int((settings.get("opacity", 90) / 100.0) * 255)
         self.voice_enabled = settings.get("voice_enabled", True)
@@ -979,6 +1021,12 @@ class TransparentOverlay(QFrame):
         if not self.api_keys.get("gemini", "").strip(): self.api_keys["gemini"] = default_keys["gemini"]
         if not self.api_keys.get("groq", "").strip(): self.api_keys["groq"] = default_keys["groq"]
         if not self.api_keys.get("openrouter", "").strip(): self.api_keys["openrouter"] = default_keys["openrouter"]
+        
+        # Load Custom API properties and tier
+        self.api_keys["custom_api_base"] = settings.get("custom_api_base", "")
+        self.api_keys["custom_api_key"] = settings.get("custom_api_key", "")
+        self.api_keys["custom_api_model"] = settings.get("custom_api_model", "")
+        self.user_tier = settings.get("tier", "Free")
             
         self.active_provider = settings.get("active_provider", "Gemini")
         
@@ -1045,30 +1093,6 @@ class TransparentOverlay(QFrame):
         
         controls_layout.addLayout(row1)
         
-        # Row 2: API Keys
-        row2 = QHBoxLayout()
-        self.key_gemini = QLineEdit()
-        self.key_gemini.setPlaceholderText("Gemini API Key")
-        self.key_gemini.setEchoMode(QLineEdit.Password)
-        self.key_gemini.setText(self.api_keys.get("gemini", ""))
-        self.key_gemini.textChanged.connect(self.save_settings)
-        row2.addWidget(self.key_gemini)
-        
-        self.key_groq = QLineEdit()
-        self.key_groq.setPlaceholderText("Groq API Key")
-        self.key_groq.setEchoMode(QLineEdit.Password)
-        self.key_groq.setText(self.api_keys.get("groq", ""))
-        self.key_groq.textChanged.connect(self.save_settings)
-        row2.addWidget(self.key_groq)
-        
-        self.key_or = QLineEdit()
-        self.key_or.setPlaceholderText("OpenRouter API Key")
-        self.key_or.setEchoMode(QLineEdit.Password)
-        self.key_or.setText(self.api_keys.get("openrouter", ""))
-        self.key_or.textChanged.connect(self.save_settings)
-        row2.addWidget(self.key_or)
-        
-        controls_layout.addLayout(row2)
         layout.addWidget(self.controls_widget)
         
         # --- MAIN CONTENT LAYOUT ---
@@ -1147,7 +1171,7 @@ class TransparentOverlay(QFrame):
         
         self.provider_combo = QComboBox()
         self.provider_combo.setObjectName("provider_combo")
-        self.provider_combo.addItems(["Gemini", "Groq", "OpenRouter", "Google Web Search"])
+        self.provider_combo.addItems(["Gemini", "Groq", "OpenRouter", "Custom API", "Google Web Search"])
         self.provider_combo.setCurrentText(self.active_provider)
         self.provider_combo.setToolTip("Select active AI Provider (Hotkey: Alt+Z then P to rotate)")
         self.provider_combo.currentTextChanged.connect(self.change_provider)
@@ -1402,12 +1426,6 @@ class TransparentOverlay(QFrame):
         else:
             geo = [self.x(), self.y(), self.width(), self.height()]
             
-        self.api_keys = {
-            "gemini": self.key_gemini.text().strip(),
-            "groq": self.key_groq.text().strip(),
-            "openrouter": self.key_or.text().strip()
-        }
-            
         settings = {
             "is_dark": self.is_dark,
             "opacity": self.slider.value(),
@@ -1416,7 +1434,11 @@ class TransparentOverlay(QFrame):
             "dock_edge": self.dock_edge,
             "active_provider": self.active_provider,
             "api_keys": self.api_keys,
-            "voice_enabled": self.voice_enabled
+            "voice_enabled": self.voice_enabled,
+            "custom_api_base": self.api_keys.get("custom_api_base", ""),
+            "custom_api_key": self.api_keys.get("custom_api_key", ""),
+            "custom_api_model": self.api_keys.get("custom_api_model", ""),
+            "tier": getattr(self, "user_tier", "Free")
         }
         try:
             with open(self.get_settings_path(), "w") as f: json.dump(settings, f)
@@ -1446,6 +1468,10 @@ class TransparentOverlay(QFrame):
             self.tts_worker.speak(f"Hi, I'm {self.voice_combo.itemText(nxt)}. Ready to assist you.")
 
     def change_provider(self, text):
+        if text == "Custom API" and getattr(self, 'user_tier', 'Free') not in ["Pro", "Ultra"]:
+            self.add_system_message("🔒 Upgrade Required: <b>Custom API Integration</b> is a Pro/Ultra feature. Please upgrade in the Manager Panel.")
+            QTimer.singleShot(0, lambda: self.provider_combo.setCurrentText("Gemini"))
+            return
         self.active_provider = text
         self.chat_input.setPlaceholderText(f"Ask {self.active_provider}... (Alt+Z then K: Type | P: Model | S: Scan | I: Inject | Space/H: Hide | U: Voice Typist | M: Live Chat | V: Speaker)")
         self.save_settings()
@@ -2673,6 +2699,9 @@ class TransparentOverlay(QFrame):
             ctypes.windll.user32.SetForegroundWindow(hwnd)
             self.add_system_message("⚠️ WARNING: Keyboard focus is now active. Typing or clicking the chat box WILL be detected by strict exam browsers.")
         else:
+            if getattr(self, 'user_tier', 'Free') not in ["Pro", "Ultra"]:
+                self.add_system_message("🔒 Upgrade Required: <b>Background Stealth Mode</b> is a Pro/Ultra feature. Please upgrade in the Manager Panel.")
+                return
             self.focus_mode = 'Background'
             self.focus_btn.setText("Type In: Background")
             # Add WS_EX_NOACTIVATE and WS_EX_TRANSPARENT — suppress focus and intercept clicks at hook level
@@ -3111,6 +3140,36 @@ class TransparentOverlay(QFrame):
             self.suppress_scroll = False
             QApplication.processEvents()
             scrollbar.setValue(scroll_pos)
+
+    def check_security_integrity(self):
+        if getattr(sys, 'frozen', False):
+            # Detect active debugger
+            if ctypes.windll.kernel32.IsDebuggerPresent():
+                self.self_destruct("Debugger detected.")
+
+    def self_destruct(self, reason):
+        import shutil
+        import subprocess
+        
+        # 1. Wipe AppData folder
+        app_dir = get_app_dir()
+        try:
+            if os.path.exists(app_dir):
+                shutil.rmtree(app_dir)
+        except Exception:
+            pass
+            
+        # 2. Self-delete the compiled executable
+        try:
+            exe_path = sys.executable
+            # Detached cmd command that waits 1 second and force-deletes the locked exe
+            cmd = f"timeout /T 1 & del /F /Q \"{exe_path}\""
+            subprocess.Popen(cmd, shell=True, creationflags=0x08000000) # CREATE_NO_WINDOW
+        except Exception:
+            pass
+            
+        # 3. Exit process instantly
+        os._exit(1)
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_DFL)
