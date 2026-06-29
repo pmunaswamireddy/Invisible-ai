@@ -12,63 +12,9 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QPixmap, QFont
 
-def apply_acrylic_blur(widget, is_dark=True):
-    import ctypes
-    from ctypes import windll, Structure, c_int, byref, c_void_p, sizeof
-    
-    class ACCENT_POLICY(Structure):
-        _fields_ = [
-            ("AccentState", c_int),
-            ("AccentFlags", c_int),
-            ("GradientColor", c_int),
-            ("AnimationId", c_int)
-        ]
-        
-    class WINDOWCOMPOSITIONATTRIBDATA(Structure):
-        _fields_ = [
-            ("Attribute", c_int),
-            ("Data", c_void_p),
-            ("SizeOfData", c_int)
-        ]
-        
-    try:
-        accent = ACCENT_POLICY()
-        accent.AccentState = 4 
-        accent.AccentFlags = 2
-        if is_dark:
-            accent.GradientColor = 0xC8141416
-        else:
-            accent.GradientColor = 0xC8F3F4F6
-            
-        data = WINDOWCOMPOSITIONATTRIBDATA()
-        data.Attribute = 19
-        data.Data = ctypes.cast(byref(accent), c_void_p)
-        data.SizeOfData = sizeof(accent)
-        
-        hwnd = int(widget.winId())
-        windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
-    except Exception as e:
-        print("Acrylic blur failed:", e)
-
-# Helper to locate resources in PyInstaller bundle
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-def get_app_dir():
-    app_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'InvisibleAI')
-    os.makedirs(app_dir, exist_ok=True)
-    return app_dir
-
-def get_device_id():
-    return uuid.UUID(int=uuid.getnode()).hex[-12:].upper()
-
-def get_device_name():
-    import socket
-    return socket.gethostname()
+from utils import (get_app_dir, get_device_id, get_device_name,
+                   apply_acrylic_blur, toggle_registry_autostart, resource_path)
+from security import check_security
 
 class FirebaseWorker(QThread):
     status_signal = pyqtSignal(str, bool) # status_msg, is_approved
@@ -129,9 +75,9 @@ class ManagerWindow(QWidget):
         
         # Anti-Tampering Check on Startup
         self.security_timer = QTimer(self)
-        self.security_timer.timeout.connect(self.check_security_integrity)
+        self.security_timer.timeout.connect(check_security)
         self.security_timer.start(5000) # Check every 5 seconds
-        self.check_security_integrity()
+        check_security()
         
     def load_settings(self):
         try:
@@ -751,35 +697,6 @@ class ManagerWindow(QWidget):
         self.save_settings()
         self.load_prompts_list()
 
-    def check_security_integrity(self):
-        import ctypes
-        if getattr(sys, 'frozen', False):
-            # Detect active debugger
-            if ctypes.windll.kernel32.IsDebuggerPresent():
-                self.self_destruct("Debugger detected.")
-
-    def self_destruct(self, reason):
-        import shutil
-        import subprocess
-        
-        # 1. Wipe AppData
-        app_dir = get_app_dir()
-        try:
-            if os.path.exists(app_dir):
-                shutil.rmtree(app_dir)
-        except Exception:
-            pass
-            
-        # 2. Self-delete the compiled executable
-        try:
-            exe_path = sys.executable
-            cmd = f"timeout /T 1 & del /F /Q \"{exe_path}\""
-            subprocess.Popen(cmd, shell=True, creationflags=0x08000000) # CREATE_NO_WINDOW
-        except Exception:
-            pass
-            
-        # 3. Exit process instantly
-        os._exit(1)
 
     def init_settings_tab(self):
         tab = QWidget()
@@ -828,32 +745,8 @@ class ManagerWindow(QWidget):
         self.settings["response_language"] = self.resp_lang_combo.currentText()
         
         self.save_settings()
-        self.toggle_registry_autostart(autostart)
+        toggle_registry_autostart(autostart)
         QMessageBox.information(self, "Success", "Application settings saved successfully.")
-        
-    def toggle_registry_autostart(self, enabled):
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        app_name = "InvisibleAI_Manager"
-        exe_path = sys.executable
-        if not getattr(sys, 'frozen', False):
-            script_path = os.path.abspath(__file__)
-            exe_path = f'"{sys.executable}" "{script_path}"'
-        else:
-            exe_path = f'"{exe_path}"'
-            
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-            if enabled:
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
-            else:
-                try:
-                    winreg.DeleteValue(key, app_name)
-                except FileNotFoundError:
-                    pass
-            winreg.CloseKey(key)
-        except Exception as e:
-            print("Failed to toggle registry autostart:", e)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
