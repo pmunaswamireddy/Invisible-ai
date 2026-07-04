@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "C:\Users\PMR\.gemini\antigravity-ide\brain\1d5c8e9c-8053-408d-81bb-8a2e94ddaffd\scratch\test_crash.py", line 16, in <module>
+    overlay.toggle_interview_mode()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "d:\invisibleai\overlay.py", line 3946, in toggle_interview_mode
+    self.start_interview_listening()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "d:\invisibleai\overlay.py", line 4053, in start_interview_listening
+    self.dictation_worker.error_signal.connect(self.on_interview_voice_error)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'TransparentOverlay' object has no attribute 'on_interview_voice_error'. Did you mean: 'on_single_voice_error'?
