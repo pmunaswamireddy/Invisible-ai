@@ -1,0 +1,6 @@
+@echo off
+echo Cleaning up previous instances to free hotkeys...
+taskkill /F /IM python.exe /T >nul 2>&1
+echo Starting Invisible AI Overlay...
+.venv\Scripts\python.exe -u overlay.py
+exit
