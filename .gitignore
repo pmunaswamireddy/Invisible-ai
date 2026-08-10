@@ -1,0 +1,32 @@
+# Environment & Virtualenvs
+.venv/
+venv/
+ENV/
+.env
+
+# Python cache & bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build & Dist Artifacts
+build/
+dist/
+*.egg-info/
+
+# User Settings & History
+chat_history.json
+settings.json
+
+# Temporary Generated Media & Logs
+generated_image_*.jpg
+scan_result.png
+*.log
+*.txt
+!file_version_info.txt
+!README.md
+
+# Temporary Test Scripts
+test_*.py
+search_hotkey.py
