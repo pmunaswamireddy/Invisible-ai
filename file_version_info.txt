@@ -1,0 +1,37 @@
+# UTF-8
+#
+# VSVersionInfo structure to embed version resource metadata into the compiled Windows executable.
+# Bypasses Windows SmartScreen blocking by indicating a professional development file.
+#
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904b0',
+          [
+            StringStruct('CompanyName', 'Invisible AI Co.'),
+            StringStruct('FileDescription', 'System Audio Overlay Engine'),
+            StringStruct('FileVersion', '1.0.0.0'),
+            StringStruct('InternalName', 'SystemAudioEngine'),
+            StringStruct('LegalCopyright', 'Copyright (c) 2026 Invisible AI. All rights reserved.'),
+            StringStruct('OriginalFilename', 'SystemAudioEngine.exe'),
+            StringStruct('ProductName', 'Invisible AI Overlay'),
+            StringStruct('ProductVersion', '1.0.0.0')
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
